@@ -515,30 +515,64 @@ SEED_ADMIN_EMAIL=my@email.com SEED_ADMIN_PASSWORD=MyPass@123 npm run seed
 
 ---
 
-## Deploy to Render (Free)
+## Deploy to Vercel + Render (Free, Separate Services)
 
-The repository includes `render.yaml`, so Render can build and deploy everything automatically.
-Because the Express server serves the built React client, **one** service runs both the API and the
-frontend — no CORS setup, no second dashboard.
+The application is now deployed as **three independent services** so each part scales and
+manages independently:
 
-### Step 1 — Push the repository
+```
+FRONTEND  ->  Vercel    (React)
+BACKEND   ->  Render    (Node.js + Express + MongoDB)
+DATABASE  ->  Atlas     (M0 free tier)
+```
+
+Because the frontend calls the backend through its public URL, the React app does NOT
+need to be built into the Express server - each service is fully independent.
+
+### Architecture
+
+- **Render** hosts the Express API at `https://ai-study-buddy-api.onrender.com`.
+  The API serves only JSON; it does not serve the React build.
+- **Vercel** hosts the React build at `https://ai-study-buddy.vercel.app`.
+  It calls the Render API URL through the `VITE_API_URL` environment variable.
+- **MongoDB Atlas** is a standalone cluster both services connect to.
+- The **Offline Demo Engine** still runs on the backend when `GEMINI_API_KEY` is absent,
+  so the app remains fully functional.
+
+### Step 1 - Get the two API tokens (30 seconds each)
+
+You only need to do this once. These tokens let the deployment scripts authenticate
+with each platform.
+
+**A. Vercel token**
+1. Go to **https://vercel.com/account/tokens**
+2. Click **Create Token**
+3. Name: `ai-study-buddy`, Scope: **Deployments**
+4. Click **Create** and **copy the token immediately** (it is shown only once)
+
+**B. Render API key**
+1. Go to **https://dashboard.render.com/settings/api**
+2. Copy the **Live API Key** shown on that page
+
+### Step 2 - Push the repository
 
 ```bash
-git add .
+git add -A
 git commit -m "Deploy AI StudyBuddy"
 git push
 ```
 
-### Step 2 — Create the service
+### Step 3 - Deploy the backend API to Render
 
-1. Go to **https://render.com** and sign up with your GitHub account.
-2. Click **New → Blueprint** and select the `HasimRizvi/Ai-Study-Buddy` repository.
-3. Render reads `render.yaml` and shows the **ai-study-buddy** web service on the **Free** plan.
-4. Click **Apply**.
+```bash
+$env:RENDER_API_KEY="PASTE_YOUR_RENDER_KEY_HERE"
+render services create --yaml render.yaml
+```
 
-### Step 3 — Add the secret values
+This reads `render.yaml` and creates one free web service: **ai-study-buddy-api**.
 
-Under **Environment** for the service, set:
+**Configure environment variables** on the Render dashboard under the service's
+**Environment** tab:
 
 | Key | Value |
 |---|---|
@@ -547,44 +581,118 @@ Under **Environment** for the service, set:
 
 `JWT_SECRET` is generated automatically by Render.
 
-### Step 4 — Watch the build
-
-The build runs:
+The API builds and starts. Its public URL will be:
 
 ```
-npm run install:all && npm run build
+https://ai-study-buddy-api.onrender.com
 ```
 
-and the start command is `npm start`. When the deploy succeeds you get a URL like:
-
-```
-https://ai-study-buddy.onrender.com
-```
-
-Health check: `https://ai-study-buddy.onrender.com/api/health`
-
-### Step 5 — Seed demo data (optional)
-
-Render free services do not keep a persistent shell for long, so seed from your **local** machine
-instead — it writes to the same Atlas database:
+Verify it:
 
 ```bash
-# in the project root, with server/.env pointing at your Atlas cluster
+curl https://ai-study-buddy-api.onrender.com/api/health
+```
+
+### Step 4 - Deploy the frontend to Vercel
+
+```bash
+$env:VERCEL_TOKEN="PASTE_YOUR_VERCEL_TOKEN_HERE"
+
+# Build once locally so the dist is ready, with the Render API URL baked in
+cd client
+$env:VITE_API_URL="https://ai-study-buddy-api.onrender.com"
+npm run build
+cd ..
+
+# Deploy to Vercel
+vercel --prod --token $env:VERCEL_TOKEN
+```
+
+During the first `vercel` command you will be asked to confirm the project settings -
+accept the defaults (it auto-detects the Vite React project).
+
+Vercel will assign a URL like:
+
+```
+https://ai-study-buddy.vercel.app
+```
+
+**Important:** set the same `VITE_API_URL` in the Vercel dashboard too so future deploys
+rebuild with the correct API URL:
+
+- Vercel dashboard -> Project -> Settings -> Environment Variables
+- Add: `VITE_API_URL` = `https://ai-study-buddy-api.onrender.com`
+
+### Step 5 - Seed demo data (optional)
+
+Seed from your local machine so it writes to the same Atlas database:
+
+```bash
+# server/.env must point at your Atlas MONGO_URI
 npm run seed
 ```
 
+**Demo credentials:** `hasim@mohamedsathak.edu.in` / `Hasim@2026`
+
+### Step 6 - Share the links with your staff
+
+Once both deploys succeed, the live URLs are:
+
+| Service | URL |
+|---|---|
+| **Frontend (React)** | `https://ai-study-buddy.vercel.app` |
+| **Backend API** | `https://ai-study-buddy-api.onrender.com` |
+| **API Health** | `https://ai-study-buddy-api.onrender.com/api/health` |
+
+Send the **frontend URL** to your staff - that is all they need to open in a browser.
+The API URL is only used internally by the frontend.
+
+### How to redeploy after code changes
+
+**Backend (Render)**
+```bash
+render services sync --service ai-study-buddy-api --token $env:RENDER_API_KEY
+```
+
+**Frontend (Vercel)**
+```bash
+vercel --prod --token $env:VERCEL_TOKEN
+```
+
+Both platforms auto-deploy from GitHub on every `git push` when connected, so pushing
+to `main` deploys everything automatically.
+
 ### Free tier notes
 
-- **Free web services sleep after 15 minutes of inactivity.** The first request after a sleep takes
-  roughly 30–60 seconds. Wake it up before a demo or viva.
-- Uploaded files live on the container filesystem and are **cleared on redeploy**. Study material
-  text is stored in MongoDB, so generated resources survive; only the raw uploaded file is temporary.
-  For permanent file storage, add Cloudinary or Amazon S3 in `server/src/middleware/upload.js`.
-- The **Offline Demo Engine keeps the app fully functional** even if the Gemini key expires or the
-  quota runs out.
+- **Render free services sleep after 15 minutes** of inactivity - first request takes
+  ~30-60 seconds. Wake it before a demo.
+- **Vercel free tier** allows 100 GB-hours/month and serverless function invocations.
+- **MongoDB Atlas M0** gives 512 MB of shared storage.
+- **The Offline Demo Engine keeps the app fully functional** even if the Gemini key
+  expires or the quota runs out.
+- Uploaded files live on the Render container filesystem and are **cleared on redeploy**.
+  Text is persisted in MongoDB, so generated AI resources survive. For permanent file
+  storage, add Cloudinary or Amazon S3 in `server/src/middleware/upload.js`.
 
 ---
 
+## Deploy to Render (Single Service - Alternative)
+
+If you prefer the simpler **one-service** option (Express serves both API and React),
+use the `render.yaml` as-is:
+
+```bash
+render services create --yaml render.yaml --token $env:RENDER_API_KEY
+```
+
+This creates a single free web service `ai-study-buddy` that runs both the backend and
+the React build. No separate Vercel account is needed. The URL is
+`https://ai-study-buddy.onrender.com`.
+
+---
+
+
+## Testing
 ## Testing
 
 The backend was verified end-to-end against a real MongoDB instance — **61 automated assertions, all
