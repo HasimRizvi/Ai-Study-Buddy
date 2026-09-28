@@ -1,0 +1,31 @@
+{
+  "name": "ai-study-buddy-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend API for AI StudyBuddy - Express, MongoDB, JWT and Google Gemini.",
+  "author": "Hasim Rizvi",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "seed": "node src/utils/seed.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.0",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
